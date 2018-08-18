@@ -1,0 +1,12 @@
+{
+  "devDependencies": {
+    "solc": "^0.4.24"
+  },
+  "scripts": {
+    "compile": "solcjs contracts/* --abi --bin -o build",
+    "deploy": "./deploy.js"
+  },
+  "dependencies": {
+    "web3": "^1.0.0-beta.35"
+  }
+}
