@@ -7,6 +7,7 @@
     "deploy": "./deploy.js"
   },
   "dependencies": {
+    "console.table": "^0.10.0",
     "web3": "^1.0.0-beta.35"
   }
 }
