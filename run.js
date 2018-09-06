@@ -42,7 +42,7 @@ const _readAccountBalance = ({ balance }) => {
 const readAllBalance = () => {
     const balances = accounts.slice(1).map(account => ({ account }))
     return Promise.resolve()
-        .then(console.group('Reading all balance...'))
+        .then(console.group('Reading all balances...'))
         .then(() => Promise.all(balances.map(balance => _readAccountBalance({ balance }))))
         .then(() => console.table(balances))
         .then(console.groupEnd)
@@ -129,7 +129,7 @@ const _initOffer = (account, offersSymbol, offersAmount, wantsSymbol, wantsAmoun
 const readAllOffer = () => {
     const offers = []
     return Promise.resolve()
-        .then(() => console.group('Reading all offer...'))
+        .then(() => console.group('Reading all offers...'))
         .then(() => exchange.methods.offerCount().call())
         .then(c => Promise.all(Array.from(Array(parseInt(c)).keys()).map(x => {
             const offer = { id: x + 1 }
