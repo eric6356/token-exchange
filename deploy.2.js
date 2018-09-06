@@ -8,8 +8,8 @@ const TokenFactoryABI = JSON.parse(fs.readFileSync('./build/contracts_EIP20Facto
 const TokenFactoryData = fs.readFileSync('./build/contracts_EIP20Factory_sol_EIP20Factory.bin')
 const TokenABI = JSON.parse(fs.readFileSync('./build/contracts_EIP20_sol_EIP20.abi'))
 const TokenData = fs.readFileSync('./build/contracts_EIP20_sol_EIP20.bin')
-const ExchangeABI = JSON.parse(fs.readFileSync('./build/contracts_Exchange_sol_Exchange.abi'))
-const ExchangeData = fs.readFileSync('./build/contracts_Exchange_sol_Exchange.bin')
+const ExchangeABI = JSON.parse(fs.readFileSync('./build/contracts_Exchange_sol_Exchange2.abi'))
+const ExchangeData = fs.readFileSync('./build/contracts_Exchange_sol_Exchange2.bin')
 
 let coinbase, TokenFactoryContract, tokenFactory, ExchangeContract, exchange, accounts
 let tokens = {}
@@ -35,7 +35,7 @@ const _readAccountBalance = ({ balance }) => {
     return Promise.all([
         _readTokenBalance({ symbol: 'TKA', account, balance }),
         _readTokenBalance({ symbol: 'TKB', account, balance }),
-        _readTokenBalance({ symbol: 'TKC', account, balance }),
+        // _readTokenBalance({ symbol: 'TKC', account, balance }),
     ])
 }
 
@@ -52,7 +52,7 @@ const init = () => Promise.resolve()
     .then(() => web3.eth.getCoinbase())
     .then(res => coinbase = res)
     .then(() => web3.eth.getAccounts())
-    .then(res => accounts = res.slice(0, 6))
+    .then(res => accounts = res.slice(0, 4))
 
 const deployTokenFactory = () => Promise.resolve()
     .then(() => {
@@ -83,9 +83,9 @@ const createTokens = () => Promise.resolve()
     .then(() => tokenFactory.methods.createEIP20(1000000, 'Token B', 1, 'TKB').send())
     .then(() => tokenFactory.methods.created(2).call())
     .then(tokenCreated('TKB'))
-    .then(() => tokenFactory.methods.createEIP20(1000000, 'Token C', 1, 'TKC').send())
-    .then(() => tokenFactory.methods.created(3).call())
-    .then(tokenCreated('TKC'))
+    // .then(() => tokenFactory.methods.createEIP20(1000000, 'Token C', 1, 'TKC').send())
+    // .then(() => tokenFactory.methods.created(3).call())
+    // .then(tokenCreated('TKC'))
     .then(console.groupEnd)
 
 const deployExchange = () => Promise.resolve()
@@ -108,22 +108,16 @@ const _initBalance = (symbol, account, balance) => () => Promise.resolve()
 
 const initBalance = () => Promise.resolve()
     .then(() => console.group('Init Balance...'))
-    .then(_initBalance('TKA', accounts[1], 5000))
-    .then(_initBalance('TKB', accounts[2], 5000))
-    .then(_initBalance('TKC', accounts[3], 5000))
-    .then(_initBalance('TKA', accounts[4], 100))
-    .then(_initBalance('TKB', accounts[5], 200))
+    .then(_initBalance('TKA', accounts[1], 1000))
+    .then(_initBalance('TKB', accounts[2], 500))
+    .then(_initBalance('TKB', accounts[3], 1500))
     .then(readAllBalance)
     .then(console.groupEnd)
 
-const _initOffer = (account, offersSymbol, offersAmount, wantsSymbol, wantsAmount) => {
-    // console.log(`${account} wants ${wantsAmount} ${wantsSymbol} for ${offersAmount} ${offersSymbol}`)
-    const offersToken = tokens[offersSymbol]
-    const wantsToken = tokens[wantsSymbol]
-    return offersToken.methods.allowance(account, exchange.options.address).call()
-        .then(currentAllowance => offersToken.methods.approve(exchange.options.address, parseInt(currentAllowance) + offersAmount).send({ from: account }))
-        .then(() => exchange.methods.initOffer(offersToken.options.address, offersAmount, wantsToken.options.address, wantsAmount).send({ from: account }))
-        .then(() => exchange.methods.offerCount().call())
+const _initOffer = (sellingSymbol, totalSellAmount, buyingSymbol, totalBuyAmount) => {
+    const sellToken = tokens[sellingSymbol].options.address
+    const buyToken = tokens[buyingSymbol].options.address
+    return exchange.methods.initOffer(sellToken, totalSellAmount, buyToken, totalBuyAmount).send()
 }
 
 const readAllOffer = () => {
@@ -131,67 +125,79 @@ const readAllOffer = () => {
     return Promise.resolve()
         .then(() => console.group('Reading all offer...'))
         .then(() => exchange.methods.offerCount().call())
-        .then(c => Promise.all(Array.from(Array(parseInt(c)).keys()).map(x => {
-            const offer = { id: x + 1 }
-            offers.push(offer)
-            return _readOfferById({ offer })
-        })))
+        .then(c => Promise.all(Array.from(Array(parseInt(c)).keys()).map(x => _readOfferById({ offers, id: x + 1 }))))
         .then(() => console.table(offers))
         .then(console.groupEnd)
 }
 
-const _readOfferById = ({ offer }) => {
-    const { id } = offer
+const _readOfferById = ({ offers, id }) => {
     return exchange.methods.offers(id).call()
-        .then(({ initiator, offers, offersAmount, wants, wantsAmount, acceptor }) => {
-            offer.initiator = initiator
-            offer.offers = getTokenSymbol(offers)
-            offer.offersAmount = offersAmount
-            offer.wants = getTokenSymbol(wants)
-            offer.wantsAmount = wantsAmount
-            offer.acceptor = acceptor
+        .then(({ sellerCount, sellingToken, totalSellAmount, currentSellAmount, buyerCount, buyingToken, totalBuyAmount, currentBuyAmount }) => {
+            const offer = { id, selling: getTokenSymbol(sellingToken), tSell: totalSellAmount, cSell: currentSellAmount, buying: getTokenSymbol(buyingToken), tBuy: totalBuyAmount, cBuy: currentBuyAmount }
+            offers.push(offer)
+            offer.sellers = []  // Array.from(Array(parseInt(sellerCount)).keys()).map(() => ({}))
+            offer.buyers = [] // Array.from(Array(parseInt(buyerCount)).keys()).map(() => ({}))
+
+            return Promise.all([
+                _readOfferSellersOrBuyers({ offer, id, sellerCount }),
+                _readOfferSellersOrBuyers({ offer, id, buyerCount })
+            ])
+                .then(() => {
+                    offer.sellers = offer.sellers.join(', ')
+                    offer.buyers = offer.buyers.join(', ')
+                })
         })
+}
+
+const _readOfferSellersOrBuyers = ({ offer, id, sellerCount, buyerCount }) => {
+    let count = sellerCount === undefined ? buyerCount : sellerCount
+    const accountGetter = sellerCount === undefined ? exchange.methods.getBuyer : exchange.methods.getSeller
+    const amountGetter = sellerCount === undefined ? exchange.methods.getBuyersAmount : exchange.methods.getSellersAmount
+    const result = sellerCount === undefined ? offer.buyers : offer.sellers
+    count = parseInt(count)
+    return Promise.all(Array.from(Array(count).keys()).map(x => {
+        let account
+        return Promise.all([
+            accountGetter(id, x + 1).call().then(s => { account = s }),
+            amountGetter(id, x + 1).call().then(amount => result.push(`${account}: ${amount}`))
+        ])
+    }))
 }
 
 const _checkAllowance = (symbol, from, to) => {
     return tokens[symbol].methods.allowed(from, to).call().then(console.log)
 }
 
-const _logLatestOffer = () => exchange.methods.offerCount().call()
-    .then(i => exchange.methods.offers(i).call())
-    .then(console.log)
-
-const _acceptOffer = (account, offerId) => {
-    console.log(`${account} accepting offer ${offerId}`)
+const _addSeller = (account, offerId, amount) => {
+    console.log(`adding ${account} to offer ${offerId}, selling ${amount}`)
     let token
-    let amount
     return exchange.methods.offers(offerId).call()
-        .then(({ wants, wantsAmount }) => {
-            token = getToken(wants)
-            amount = wantsAmount
-        })
+        .then(({ sellingToken }) => { token = getToken(sellingToken) })
         .then(() => token.methods.allowance(account, exchange.options.address).call())
         .then(currentAllowance => token.methods.approve(exchange.options.address, amount + parseInt(currentAllowance)).send({ from: account }))
-        .then(() => exchange.methods.acceptOffer(offerId).send({ from: account }))
+        .then(() => exchange.methods.addSeller(offerId, amount).send({ from: account }))
 }
 
-const checkBalance = (symbol, account) => tokens[symbol].methods.balances(account).call()
-    .then(b => console.log(`${account} now has ${b} ${symbol}`))
+const _addBuyer = (account, offerId, amount) => {
+    console.log(`adding ${account} to offer ${offerId}, buying ${amount}`)
+    let token
+    return exchange.methods.offers(offerId).call()
+        .then(({ buyingToken }) => { token = getToken(buyingToken) })
+        .then(() => token.methods.allowance(account, exchange.options.address).call())
+        .then(currentAllowance => token.methods.approve(exchange.options.address, amount + parseInt(currentAllowance)).send({ from: account }))
+        .then(() => exchange.methods.addBuyer(offerId, amount).send({ from: account }))
+}
+
 
 const initOffer = () => Promise.resolve()
     .then(() => console.group('Init Offer...'))
-    // TODO: do this from UI
-    .then(() => _initOffer(accounts[1], 'TKA', 1000, 'TKB', 2000))
-    .then(() => _initOffer(accounts[2], 'TKB', 2000, 'TKC', 3000))
-    .then(() => _initOffer(accounts[3], 'TKC', 3000, 'TKA', 1000))
-    .then(() => _initOffer(accounts[4], 'TKA', 100, 'TKB', 200))
+    .then(() => _initOffer('TKA', 1000, 'TKB', 2000))
     .then(readAllOffer)
-    // TODO: do this from UI
-    .then(() => _acceptOffer(accounts[5], 4))
+    .then(() => _addSeller(accounts[1], 1, 1000))
+    .then(() => _addBuyer(accounts[2], 1, 500))
+    .then(() => _addBuyer(accounts[3], 1, 1500))
+    .then(readAllOffer)
     .then(readAllBalance)
-    .then(readAllOffer)
-    // .then(() => checkBalance('TKB', accounts[4]))
-    // .then(() => checkBalance('TKA', accounts[5]))
     .then(console.groupEnd)
 
 Promise.resolve()
@@ -201,5 +207,5 @@ Promise.resolve()
     .then(initBalance)
     .then(deployExchange)
     .then(initOffer)
-    .then(() => fs.writeFileSync('./deployed.json', JSON.stringify(deployed, '\n', 4)))
+    .then(() => fs.writeFileSync('./deployed.2.json', JSON.stringify(deployed, '\n', 4)))
     .catch(console.error)
