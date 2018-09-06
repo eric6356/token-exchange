@@ -146,3 +146,80 @@ contract Exchange2 {
         }
     }
 }
+
+contract Exchange3 {
+    EIP20Factory factory;
+
+    constructor(EIP20Factory _factory) public {
+        factory = _factory;
+    }
+
+    mapping(uint => Delegation) public delegations;  // sell delegation only
+    uint public delegationCount;
+    struct Delegation {
+        uint id;
+        address agent;
+        address token;
+        uint totalAmount;
+        uint currentAmount;
+        uint ppm;
+        address client;
+    }
+
+    mapping(uint => DelegatedOffer) public delegatedOffers;  // sell delegation only
+    uint public delegatedOfferCount;
+    struct DelegatedOffer {
+        uint id;
+        address offers;
+        uint offersAmount;
+        address wants;
+        uint wantsAmount;
+        address acceptor;
+        uint delegationId;
+    }
+
+    function initDelegation(address _token, uint _amount, uint _ppm) public {
+        delegationCount++;
+        Delegation memory d = Delegation(delegationCount, msg.sender, _token, _amount, 0, _ppm, address(0));
+        delegations[delegationCount] = d;
+    }
+
+    function signDelegation(uint _delegationId) public {
+        Delegation storage d = delegations[_delegationId];
+        require(d.client == address(0), "delegation already signed");
+        // FIXME: check allowance
+        d.client = msg.sender;
+    }
+
+    function initDelegatedOffer(uint _delegationId, uint _offersAmount, address _wants, uint _wantsAmount) public {
+        Delegation storage d = delegations[_delegationId];
+        require(d.agent == msg.sender, "not delegated by you");
+        require(d.currentAmount + _offersAmount <= d.totalAmount, "amount too large");
+        require(d.client != address(0), "client not signed");
+        // FIXME: check allowance
+
+        d.currentAmount += _offersAmount;
+        delegatedOfferCount++;
+        DelegatedOffer memory o = DelegatedOffer(delegatedOfferCount, d.token, _offersAmount, _wants, _wantsAmount, address(0), _delegationId);
+        delegatedOffers[delegatedOfferCount] = o;
+    }
+
+    function acceptDelegatedOffer(uint _offerId) public {
+        DelegatedOffer storage o = delegatedOffers[_offerId];
+        Delegation storage d = delegations[o.delegationId];
+        require(o.acceptor == address(0), "already accepted");
+        
+        EIP20 offersToken = factory.tokens(o.offers);
+        EIP20 wantsToken = factory.tokens(o.wants);
+        // FIXME: check allowance
+
+        offersToken.transferFrom(d.client, address(this), o.offersAmount);
+        offersToken.transfer(msg.sender, o.offersAmount);
+        wantsToken.transferFrom(msg.sender, address(this), o.wantsAmount);
+        uint agentAmount = o.wantsAmount * d.ppm / 1000000;
+        uint clientAmount = o.wantsAmount - agentAmount;
+        wantsToken.transfer(d.agent, agentAmount);
+        wantsToken.transfer(d.client, clientAmount);
+        o.acceptor = msg.sender;
+    }
+}
