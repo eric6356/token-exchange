@@ -10,4 +10,4 @@ node_modules/
 jspm_packages/
 
 # Deployed
-deployed.json
+deployed*

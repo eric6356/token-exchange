@@ -3,8 +3,7 @@
     "solc": "^0.4.24"
   },
   "scripts": {
-    "compile": "solcjs contracts/* --abi --bin -o build",
-    "deploy": "./deploy.js"
+    "compile": "solcjs contracts/* --abi --bin -o build"
   },
   "dependencies": {
     "console.table": "^0.10.0",
